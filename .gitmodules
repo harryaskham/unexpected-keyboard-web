@@ -1,0 +1,3 @@
+[submodule "tvix"]
+	path = tvix
+	url = https://code.tvl.fyi/depot.git:workspace=views/tvix.git
