@@ -1,4 +1,4 @@
-use tvix_eval::{EvaluationBuilder, Value, EvalIO, FileType, GlobalsMap};
+use tvix_eval::{EvaluationBuilder, Value, EvalIO, FileType, GlobalsMap, prepare_globals, SourceCode};
 use wasm_bindgen::prelude::*;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
@@ -75,7 +75,8 @@ fn pretty_print_value(value: &Value, indent_level: usize) -> String {
         }
         Value::List(list) => {
             let mut s = String::new();
-            s.push_str(&format!("{}[", indent(indent_level)));
+            s.push_str(&format!("{}[
+", indent(indent_level)));
             for val in list.iter() {
                 s.push_str(&format!("{}{}\n", indent(indent_level + 1), pretty_print_value(val, indent_level + 1)));
             }
@@ -88,14 +89,23 @@ fn pretty_print_value(value: &Value, indent_level: usize) -> String {
 
 #[wasm_bindgen]
 pub fn tvix_eval(expr: &str) -> String {
-    let mut globals_map: GlobalsMap = GlobalsMap::default();
-    globals_map.insert("lib", Value::Path(Box::new(PathBuf::from("/lib"))));
+    let io_handle = Rc::new(EmbeddedIO);
+    let source_code = SourceCode::default();
 
-    let evaluation = EvaluationBuilder::new(Rc::new(EmbeddedIO))
-        .with_globals(Rc::new(globals_map))
+    // Create a base GlobalsMap with builtins
+    let base_globals = prepare_globals(vec![], vec![], source_code.clone(), true);
+
+    // Insert the evaluated lib into the main globals_map
+    let main_globals_vec: Vec<(&'static str, Value)> = vec![
+        ("lib", Value::Path(Box::new(PathBuf::from("/lib")))),
+    ];
+    let main_globals = prepare_globals(main_globals_vec, vec![], source_code.clone(), true);
+
+    let evaluation = EvaluationBuilder::new(io_handle.clone())
+        .with_globals(main_globals)
         .build();
 
-    let result = evaluation.evaluate(expr, Some(PathBuf::from("/dummy/path/to/code.nix")));
+    let result = evaluation.evaluate(expr, Some(PathBuf::from("/dummy/path/to/code.nix").parent().unwrap().to_path_buf()));
 
     if result.errors.is_empty() {
         if let Some(value) = result.value {
